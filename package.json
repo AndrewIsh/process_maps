@@ -12,6 +12,7 @@
   "dependencies": {
     "canvas": "^2.7.0",
     "merge-images": "^2.0.0",
+    "pg": "^8.6.0",
     "sharp": "^0.27.2"
   }
 }

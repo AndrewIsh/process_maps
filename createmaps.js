@@ -2,28 +2,25 @@ const fs = require('fs');
 const sharp = require('sharp');
 const { createCanvas, loadImage } = require('canvas');
 
-const createTree = async (base) => {
+const createTree = async (dest) => {
 
     let zoom = 5;
 
     while (zoom >= 0) {
-        console.log(`Zoom ${zoom}...`);
         const divisions = 2 ** zoom; // Courtesy of Thomas
-        console.log(`Divisions ${divisions}`);
         const zoomSize = divisions * 256;
-        console.log(`Full image size ${zoomSize}`);
-        fs.mkdirSync(`${base}/${zoom}`);
-        const fullPath = `${base}/${zoom}/${zoomSize}x${zoomSize}.png`;
-        console.log(`About to write to ${fullPath}`);
-        await sharp(`${base}/9216x9216.png`)
+        console.log(`Zoom ${zoom}, divisions ${divisions}, full image size ${zoomSize}`);
+        fs.mkdirSync(`${dest}/${zoom}`);
+        const fullPath = `${dest}/${zoom}/${zoomSize}x${zoomSize}.png`;
+        await sharp(`${dest}/9216x9216.png`)
             .resize(zoomSize)
             .toFile(fullPath);
         console.log(`Written ${fullPath}`);
         const toExtract = sharp(fullPath);
+	process.stdout.write('Row ');
         for (let row = 0; row < divisions; row++) {
-            console.log(`..Row ${row}`);
+	    process.stdout.write(`${row} `);
             for (let col = 0; col < divisions; col++) {
-                console.log(`....Col ${col}`);
                 await toExtract
                     .extract({
                         left: col * 256,
@@ -31,25 +28,32 @@ const createTree = async (base) => {
                         width: 256,
                         height: 256
                     })
-                    .toFile(`${base}/${zoom}/map_${col}_${row}.png`);
-                console.log(`Written ./${zoom}/map_${col}_${row}.png`);
+                    .toFile(`${dest}/${zoom}/map_${col}_${row}.png`);
             }
         }
+	process.stdout.write('\n');
         try {
             await fs.unlinkSync(fullPath);
         } catch (err) {
-            console.log(err);
+            fs.unlinkSync(dest, { recursive: true });
+            throw err;
         }
         zoom--;
     }
-    fs.unlinkSync(`${base}/9216x9216.png`);
+    fs.unlinkSync(`${dest}/9216x9216.png`);
 };
 
-const createMaps = async (base) => {
+const createMaps = async (base, dest) => {
     if (!base) {
-        console.log('Must pass a path');
-        return;
+        return Promise.reject('Must pass a source path');
     }
+
+    if (!dest) {
+        return Promise.reject('Must pass a destination path');
+    }
+
+    // Make sure our destination exists
+    fs.mkdirSync(dest, { recursive: true });
 
     const images = [
         { src: `${base}/bWluaW1hcF9zZWFfMF8wLnBuZw==`, x: 1536, y: 0 },    // minimap_sea_0_0.png
@@ -67,10 +71,17 @@ const createMaps = async (base) => {
         const img = await loadImage(images[i].src);
         ctx.drawImage(img, images[i].x, images[i].y);
     }
-    const baseOut = fs.createWriteStream(`${base}/9216x9216.png`);
-    const stream = canvas.createPNGStream();
-    stream.pipe(baseOut);
-    baseOut.on('close', () => createTree(base));
+    return new Promise((resolve, reject) => {
+        const baseOut = fs.createWriteStream(`${dest}/9216x9216.png`);
+        const stream = canvas.createPNGStream();
+        stream.pipe(baseOut);
+        baseOut.on(
+            'close',
+            () => createTree(dest)
+                .then(() => resolve(true))
+                .catch((err) => reject(err))
+        );
+    });
 }
 
 module.exports = { createMaps };
