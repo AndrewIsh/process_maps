@@ -43,6 +43,8 @@ const createTree = async (dest) => {
     fs.unlinkSync(`${dest}/9216x9216.png`);
 };
 
+// Assumble the files we've been given into one
+// 9216 x 9216 image
 const createMaps = async (base, dest) => {
     if (!base) {
         return Promise.reject('Must pass a source path');
@@ -55,21 +57,35 @@ const createMaps = async (base, dest) => {
     // Make sure our destination exists
     fs.mkdirSync(dest, { recursive: true });
 
+    // The position in the image that each image tile is places
+    // 1536 padding on the left & right size
     const images = [
         { src: `${base}/bWluaW1hcF9zZWFfMF8wLnBuZw==`, x: 1536, y: 0 },    // minimap_sea_0_0.png
         { src: `${base}/bWluaW1hcF9zZWFfMF8xLnBuZw==`, x: 4608, y: 0 },    // minimap_sea_0_1.png
         { src: `${base}/bWluaW1hcF9zZWFfMV8wLnBuZw==`, x: 1536, y: 3072 }, // minimap_sea_1_0.png
         { src: `${base}/bWluaW1hcF9zZWFfMV8xLnBuZw==`, x: 4608, y: 3072 }, // minimap_sea_1_1.png
-        { src: `${base}/bWluaW1hcF9zZWFfMl8wLnBuZw==`, x: 1536, y: 6142 }, // minimap_sea_2_0.png
-        { src: `${base}/bWluaW1hcF9zZWFfMl8xLnBuZw==`, x: 4608, y: 6142 }  // minimap_sea_2_1.png
+        { src: `${base}/bWluaW1hcF9zZWFfMl8wLnBuZw==`, x: 1536, y: 6144 }, // minimap_sea_2_0.png
+        { src: `${base}/bWluaW1hcF9zZWFfMl8xLnBuZw==`, x: 4608, y: 6144 }  // minimap_sea_2_1.png
     ];
 
+    // Resize and re-save the images to a known size,
+    // this enables us to composite them
+    for (const image of images) {
+        console.log(`Resizing image ${image.src}...`);
+        await sharp(image.src)
+	    .resize(3072, 3072)
+	    .toFile(`${image.src}_resized.png`);
+	fs.chmodSync(`${image.src}_resized.png`, 0o777);
+    }
+
+    // Composite the images
     const canvas = createCanvas(9216, 9216);
     const ctx = canvas.getContext('2d');
-    for (let i = 0; i < images.length; i++) {
-        console.log(`Processing image ${images[i].src}...`);
-        const img = await loadImage(images[i].src);
-        ctx.drawImage(img, images[i].x, images[i].y);
+    for (const image of images) {
+	const filename = `${image.src}_resized.png`;
+        console.log(`Processing image ${filename}...`);
+        const img = await loadImage(filename);
+        ctx.drawImage(img, image.x, image.y);
     }
     return new Promise((resolve, reject) => {
         const baseOut = fs.createWriteStream(`${dest}/9216x9216.png`);
