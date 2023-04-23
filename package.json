@@ -1,18 +1,19 @@
 {
-  "name": "postal_map_png",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "dependencies": {
-    "canvas": "^2.7.0",
-    "merge-images": "^2.0.0",
-    "pg": "^8.6.0",
-    "sharp": "^0.27.2"
-  }
+    "name": "postal_map_png",
+    "version": "1.0.0",
+    "description": "",
+    "main": "index.js",
+    "scripts": {
+        "test": "echo \"Error: no test specified\" && exit 1"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "dependencies": {
+        "dotenv": "^5.0.1",
+        "canvas": "^2.7.0",
+        "merge-images": "^2.0.0",
+        "pg": "^8.6.0",
+        "sharp": "^0.27.2"
+    }
 }

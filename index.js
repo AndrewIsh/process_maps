@@ -1,14 +1,15 @@
 const { spawnSync } = require('child_process');
 const fs = require('fs');
 const { Client } = require('pg');
+require('dotenv').config()
 
 const { createMaps } = require('./createmaps');
 
-const base = '/var/www';
-const uploadDir = `${base}/map_uploads`;
+const base = process.env.MAP_SERVE_DIR;
+const uploadDir = process.env.MAP_UPLOAD_DIR;
 
 // Keep track of our progress
-const progress = {};
+let progress = {};
 
 const requiredFilenames = [
     'bWluaW1hcF9zZWFfMF8wLnBuZw==',
@@ -29,38 +30,32 @@ if (fs.existsSync('/tmp/map_process_running')) {
 }
 fs.closeSync(fs.openSync('/tmp/map_process_running', 'w'));
 
-const createDbConnection = (schema) => {
+const createDbConnection = () => {
     // Get the DB config for this instance
-    const result = spawnSync('pm2', ['jlist']);
-    const instances = result.stdout.toString('utf8');
-    const parsed = JSON.parse(instances);
-    const thisInstance = parsed.find(instance => {
-        const e = instance.pm2_env.env;
-        return e.DB_SCHEMA === schema.name;
-    });
     const client = new Client({
-        user: thisInstance.pm2_env.env.DB_USERNAME,
-        password: thisInstance.pm2_env.env.DB_PASSWORD,
+        user: process.env.DB_USERNAME,
+        password: process.env.DB_PASSWORD,
+        host: 'db',
         database: 'cadvanced'
     });
     client.connect();
     return client;
 };
 
-const prepareMap = async (schema, map) => {
+const prepareMap = async (map) => {
     console.log(`Processing map "${map.name}"`);
     const buff = Buffer.from(map.name, 'base64');
     const mapId = buff.toString('ascii');
     // Note that we've not successfully processed this map yet
-    progress[schema.name][map.name] = false;
+    progress[map.name] = false;
     // Check we've got what we're expecting
     let error = false;
-    const mapPath = `${uploadDir}/${schema.name}/${map.name}`;
+    const mapPath = `${uploadDir}/${map.name}`;
     const mapContents = fs.readdirSync(mapPath, { withFileTypes: true });
     const files = mapContents.filter(mc => mc.isFile());
     const fileNames = mapContents.map(mc => mc.name);
     // Has this map already been processed
-    const dest = `${base}/map_storage/${schema.name}/${map.name}`;
+    const dest = `${base}/${map.name}`;
     if (fs.existsSync(dest)) {
         error = `Destination directory ${dest} already exists`;
     }
@@ -89,15 +84,15 @@ const prepareMap = async (schema, map) => {
         }
     });
     if (error) {
-        console.log(`Problem found in schema "${schema.name}": ${error}`);
+        console.log(`Problem found: ${error}`);
         return;
     }
     // We're happy we've got what we expect, so we can process
     await createMaps(mapPath, dest)
         .then(result => {
-            progress[schema.name][map.name] = true;
+            progress[map.name] = true;
             // Update our map entry to say it is processed
-            const client = createDbConnection(schema);
+            const client = createDbConnection();
             const sql = `UPDATE "Maps" SET processed = 't' WHERE id = '${mapId}'`;
             client.query(sql, (err) => {
                 //  We've successfully processed this map, so we can remove
@@ -112,31 +107,21 @@ const prepareMap = async (schema, map) => {
 };
 
 const iterate = async () => {
-    // Iterate the contents of the upload directory
-    const uploadContents = fs.readdirSync(uploadDir, { withFileTypes: true });
-    // Only deal with directories
-    const schemas = uploadContents.filter(uc => uc.isDirectory());
-    for (let si = 0; si < schemas.length; si++) {
-        const schema = schemas[si];
-        console.log(`Processing schema "${schema.name}"`);
-        progress[schema.name] = {};
-        // Get all files in the schema
-        const schemaContents = fs.readdirSync(`${uploadDir}/${schema.name}`, { withFileTypes: true });
-        // All pending uploaded map IDs in this schema
-        const maps = schemaContents.filter(sc => sc.isDirectory());
-        for (let mi = 0; mi < maps.length; mi++) {
-            const map = maps[mi];
-            await prepareMap(schema, map);
-        }
-        // If we've processed all maps in this schema, we can remove its
-        // directory
-	const mapsQueued = Object.keys(progress[schema.name]);
-        const mapsNotDone = mapsQueued.filter((m) => !progress[schema.name][m]);
-        if (mapsQueued.length > 0 && mapsNotDone.length === 0) {
-            console.log(`Removing ${uploadDir}/${schema.name}`);
-            fs.rmdirSync(`${uploadDir}/${schema.name}`, { recursive: true });
-        }
+    progress = {};
+    const contents = fs.readdirSync(uploadDir, { withFileTypes: true });
+    // All pending uploaded map IDs
+    const maps = contents.filter(sc => sc.isDirectory());
+    for (let mi = 0; mi < maps.length; mi++) {
+        const map = maps[mi];
+        await prepareMap(map);
     }
+    // If we've processed all maps, we can remove the uploaded files
+	const mapsQueued = Object.keys(progress);
+        const mapsNotDone = mapsQueued.filter((m) => !progress[m]);
+        if (mapsQueued.length > 0 && mapsNotDone.length === 0) {
+            console.log(`Removing contents of ${uploadDir}`);
+            fs.rmdirSync(`${uploadDir}/*`, { recursive: true });
+        }
 };
 
 iterate().then(() => {
